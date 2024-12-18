@@ -10,3 +10,22 @@ spring:
   sql:
     init:
       mode: always
+  security:
+    oauth2:
+      client:
+        registration:
+          reddit:
+            client-id: JH4N1Ilr3P_c48p3T1su0w
+            client-secret: av8NnmONjZQiMGGAYkAhcpB5fZ8Pig
+            redirect-uri: http://localhost:8080/login/oauth2/code/reddit
+            authorization-grant-type: authorization_code
+            scope:
+                  - identity
+                  - read
+            client-name: blogapp
+        provider:
+          reddit:
+            authorization-uri: https://www.reddit.com/api/v1/authorize
+            token-uri: https://www.reddit.com/api/v1/access_token
+            user-info-uri: https://oauth.reddit.com/api/v1/me
+            user-name-attribute: name
