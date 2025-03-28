@@ -1,10 +1,9 @@
-package com.example.blogApp.blogApp.security.jwt;
+package com.example.blogApp.blogApp.security.service;
 
 import com.example.blogApp.blogApp.exceptions.HttpException;
 import com.example.blogApp.blogApp.model.User;
 import com.example.blogApp.blogApp.model.dto.request.AuthenticationRequest;
 import com.example.blogApp.blogApp.model.dto.request.RegisterRequest;
-import com.example.blogApp.blogApp.model.dto.response.AuthenticationResponse;
 import com.example.blogApp.blogApp.model.dto.response.JwtResponse;
 import com.example.blogApp.blogApp.model.enums.RoleName;
 import com.example.blogApp.blogApp.model.security.Role;

@@ -1,3 +1,8 @@
+reddit:
+  client-id: JH4N1Ilr3P_c48p3T1su0w
+  client-secret: av8NnmONjZQiMGGAYkAhcpB5fZ8Pig
+  redirect-uri: http://localhost:8080/api/reddit/callback
+  scopes: identity read
 spring:
   jpa:
     hibernate:
