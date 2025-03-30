@@ -3,10 +3,12 @@ reddit:
   client-secret: av8NnmONjZQiMGGAYkAhcpB5fZ8Pig
   redirect-uri: http://localhost:8080/api/reddit/callback
   scopes: identity read
+jwt:
+  secret: "moja-super-tajna-sekretna-wartosc"
 spring:
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: update
   datasource:
     url: jdbc:postgresql://localhost:5432/postgres
     username: postgres

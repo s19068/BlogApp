@@ -1,6 +1,7 @@
 package com.example.blogApp.blogApp.config;
 
 import com.example.blogApp.blogApp.security.jwt.AuthTokenFilter;
+import com.example.blogApp.blogApp.security.jwt.JwtCookieFilter;
 import com.example.blogApp.blogApp.security.service.MyUserDetailsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -29,10 +30,12 @@ public class SecurityConfig {
 
     private final MyUserDetailsService myUserDetailsService;
 
-    @Bean
+    private final JwtCookieFilter jwtCookieFilter;
+
+    /*@Bean
     public AuthTokenFilter authenticationJwtTokenFilter() {
         return new AuthTokenFilter();
-    }
+    }*/
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -58,15 +61,18 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/auth/login",
                                 "/auth/register",
-                                "/api/reddit/authorize",
-                                "/api/reddit/callback"
+                                "/api/reddit/callback",
+                                "/auth/logout"
                         ).permitAll()
-                        .requestMatchers("/api/reddit/posts").authenticated()
-                        .requestMatchers("/test-auth").authenticated()
+                        .requestMatchers(
+                                "/api/reddit/authorize", // 🛡️ potrzebna autoryzacja!
+                                "/api/reddit/posts"
+                        ).authenticated()
                         .anyRequest().authenticated()
                 );
-
-        http.addFilterBefore(authenticationJwtTokenFilter(), UsernamePasswordAuthenticationFilter.class);
+        http.addFilterBefore(jwtCookieFilter, UsernamePasswordAuthenticationFilter.class);
+        //wyłączenie filtra po przejsciu na cookie
+        //http.addFilterBefore(authenticationJwtTokenFilter(), UsernamePasswordAuthenticationFilter.class);
 
 
         return http.build();
@@ -76,7 +82,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:5173")); // Zezwól na połączenia z frontendu
+        configuration.setAllowedOrigins(List.of("http://localhost:5174")); // Zezwól na połączenia z frontendu
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*")); // Zezwól na dowolne nagłówki
         configuration.setAllowCredentials(true);

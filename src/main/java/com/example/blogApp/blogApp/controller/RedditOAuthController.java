@@ -6,14 +6,12 @@ import com.example.blogApp.blogApp.model.User;
 import com.example.blogApp.blogApp.model.dto.response.TokenResponse;
 import com.example.blogApp.blogApp.repository.OAuthStateTokenRepository;
 import com.example.blogApp.blogApp.repository.UserRepository;
-import com.example.blogApp.blogApp.utils.JwtUtils;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -23,7 +21,6 @@ import java.io.IOException;
 import java.net.URLEncoder;
 import java.time.Instant;
 import java.util.Base64;
-import java.util.Optional;
 import java.util.UUID;
 
 @RestController
@@ -37,9 +34,40 @@ public class RedditOAuthController {
     @Value("${reddit.client-secret}") private String redditClientSecret;
     private final UserRepository userRepository;
     private final OAuthStateTokenRepository oAuthStateTokenRepository;
-    private final JwtUtils jwtUtils;
 
     @GetMapping("/authorize")
+    public void authorizeReddit(
+            HttpServletResponse response,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) throws IOException {
+
+        User user = userRepository.findByUserName(userDetails.getUsername());
+        if (user == null) {
+            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "User not found");
+            return;
+        }
+
+
+        String state = UUID.randomUUID().toString();
+        OAuthStateToken oAuthStateToken = OAuthStateToken.builder()
+                .state(state)
+                .user(user)
+                .build();
+        oAuthStateTokenRepository.save(oAuthStateToken);
+        System.out.println("🆔 Wygenerowany state: " + state);
+        System.out.println("💾 Token zapisany w bazie: " + oAuthStateToken);
+        String authUrl = "https://www.reddit.com/api/v1/authorize?client_id=" + redditClientId
+                + "&response_type=code"
+                + "&state=" + state
+                + "&redirect_uri=" + URLEncoder.encode(redditRedirectUri, "UTF-8")
+                + "&duration=permanent"
+                + "&scope=" + URLEncoder.encode(redditScopes, "UTF-8");
+
+
+        response.sendRedirect(authUrl);
+    }
+
+    /*@GetMapping("/authorize")
     public void authorizeReddit(
             HttpServletResponse response,
             @RequestParam("token") String token
@@ -66,7 +94,7 @@ public class RedditOAuthController {
                 + "&scope=" + URLEncoder.encode(redditScopes, "UTF-8");
 
         response.sendRedirect(authUrl);
-    }
+    }*/
 
     /*@GetMapping("/authorize")
     public void authorizeReddit(HttpServletResponse response, @AuthenticationPrincipal UserDetails userDetails) throws IOException {
@@ -96,7 +124,6 @@ public class RedditOAuthController {
                                @RequestParam(required=false) String state,
                                @RequestParam(required=false) String error,
                                HttpServletResponse response) throws IOException {
-        System.out.println("wszedłem do callback");
         if (error != null) {
             // User denied or there was an error – handle accordingly
             // e.g., redirect to an error page or display a message.
@@ -149,24 +176,60 @@ public class RedditOAuthController {
         userRepository.save(user); // zapisuje też RedditAccount dzięki cascade
 
         // Redirect back to frontend (maybe to a success page)
-        response.sendRedirect("http://localhost:5173/dashboard");
+        response.sendRedirect("http://localhost:5174/dashboard");
     }
+
+    private String getValidAccessToken(User user) {
+        RedditAccount redditAccount = user.getRedditAccount();
+        if (redditAccount == null || redditAccount.getRefreshToken() == null) {
+            throw new IllegalStateException("Brak konta Reddit lub refresh tokena");
+        }
+
+        Instant now = Instant.now();
+        if (redditAccount.getTokenExpiry() != null && redditAccount.getTokenExpiry().isAfter(now)) {
+            // ✅ Token jeszcze ważny
+            return redditAccount.getAccessToken();
+        }
+
+        // 🔁 Token wygasł – odświeżamy
+        String clientAuth = Base64.getEncoder().encodeToString((redditClientId + ":" + redditClientSecret).getBytes());
+
+        WebClient webClient = WebClient.create("https://www.reddit.com");
+        Mono<TokenResponse> tokenResponse = webClient.post()
+                .uri("/api/v1/access_token")
+                .header(HttpHeaders.AUTHORIZATION, "Basic " + clientAuth)
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(BodyInserters.fromFormData("grant_type", "refresh_token")
+                        .with("refresh_token", redditAccount.getRefreshToken()))
+                .retrieve()
+                .bodyToMono(TokenResponse.class);
+
+        TokenResponse tokens = tokenResponse.block();
+        if (tokens == null || tokens.getAccessToken() == null) {
+            throw new RuntimeException("Nie udało się odświeżyć tokena Reddita");
+        }
+
+        redditAccount.setAccessToken(tokens.getAccessToken());
+        redditAccount.setTokenExpiry(Instant.now().plusSeconds(tokens.getExpiresIn()));
+        user.setRedditAccount(redditAccount);
+        userRepository.save(user);
+
+        return redditAccount.getAccessToken();
+    }
+
+
 
     @GetMapping("/me")
     public ResponseEntity<?> getRedditProfile(@AuthenticationPrincipal UserDetails userDetails) {
-        Optional<User> userOptional = Optional.ofNullable(userRepository.findByUserName(userDetails.getUsername()));
-        User user = userOptional.orElseThrow(() -> new UsernameNotFoundException(userDetails.getUsername()));
-
-        RedditAccount redditAccount = user.getRedditAccount();
-
-        if (redditAccount == null || redditAccount.getAccessToken() == null) {
+        User user = userRepository.findByUserName(userDetails.getUsername());
+        if (user == null || user.getRedditAccount() == null) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Reddit account not linked.");
         }
 
-        String accessToken = redditAccount.getAccessToken();
+        String accessToken = getValidAccessToken(user); // logika sprawdza ważność i odświeża token
 
-        WebClient client = WebClient.create("https://oauth.reddit.com");
-        String profile = client.get()
+        String profile = WebClient.create("https://oauth.reddit.com")
+                .get()
                 .uri("/api/v1/me")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                 .retrieve()
